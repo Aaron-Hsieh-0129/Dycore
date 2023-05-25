@@ -40,7 +40,7 @@ function Atmos_Spectral_Dynamics_Main(physcis_params::Dict{String, Float64}, end
     day_to_sec = 86400
     start_time = 0
     end_time = end_day*day_to_sec  #
-    Δt = 1200
+    Δt = 600
     init_step = true
     
     integrator = Filtered_Leapfrog(robert_coef, 
@@ -85,12 +85,6 @@ function Atmos_Spectral_Dynamics_Main(physcis_params::Dict{String, Float64}, end
         #@info integrator.time
 
         Update_Output!(op_man, dyn_data, integrator.time)
-
-        # if (integrator.time%day_to_sec == 0)
-        #     # dyn_data.grid_tracers_c[dyn_data.grid_tracers_c .< 0] .= 0
-        #     @info "Day: ", div(integrator.time,day_to_sec), " Max |U|,|V|,|P|,|T|,|qv|: ", maximum(abs.(dyn_data.grid_u_c)), maximum(abs.(dyn_data.grid_v_c)), maximum(dyn_data.grid_p_full), maximum(dyn_data.grid_t_c), maximum(dyn_data.grid_tracers_c)
-        #     @info "Day: ", div(integrator.time,day_to_sec), " Min |U|,|V|,|P|,|T|,|qv|: ", minimum(abs.(dyn_data.grid_u_c)), minimum(abs.(dyn_data.grid_v_c)), minimum(dyn_data.grid_p_full), minimum(dyn_data.grid_t_c), minimum(dyn_data.grid_tracers_c)
-        # end
     end
 
     return op_man

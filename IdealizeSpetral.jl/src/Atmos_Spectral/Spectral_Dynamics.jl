@@ -180,7 +180,7 @@ function Four_In_One!(vert_coord::Vert_Coordinate, atmo_data::Atmo_Data,
     grid_dλ_ps::Array{Float64,3}, grid_dθ_ps::Array{Float64,3}, 
     grid_t::Array{Float64,3}, 
     grid_M_half::Array{Float64,3}, grid_w_full::Array{Float64,3}, 
-    grid_δu::Array{Float64,3}, grid_δv::Array{Float64,3}, grid_δps::Array{Float64,3}, grid_δt::Array{Float64,3}, grid_δtracers::Array{Float64,3})
+    grid_δu::Array{Float64,3}, grid_δv::Array{Float64,3}, grid_δps::Array{Float64,3}, grid_δt::Array{Float64,3})
     
     rdgas, cp_air = atmo_data.rdgas, atmo_data.cp_air
     nd, bk = vert_coord.nd, vert_coord.bk
@@ -317,19 +317,14 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     
     grid_energy_full, spe_energy = dyn_data.grid_energy_full, dyn_data.spe_energy
     
-    # By CJY2
-    spe_tracers_n = dyn_data.spe_tracers_n
-    spe_tracers_c = dyn_data.spe_tracers_c
-    spe_tracers_p = dyn_data.spe_tracers_p 
-        
+
     grid_tracers_n = dyn_data.grid_tracers_n
     grid_tracers_c = dyn_data.grid_tracers_c
     grid_tracers_p = dyn_data.grid_tracers_p 
-        
-    spe_δtracers   = dyn_data.spe_δtracers
-    grid_δtracers  = dyn_data.grid_δtracers
-    
+    # grid_δtracers  = dyn_data.grid_δtracers
+    grid_δtracers  = zeros(Float64, mesh.nλ, mesh.nθ, 20)
     grid_tracers_full = dyn_data.grid_tracers_full
+
     ###
     # todo !!!!!!!!
     #  grid_q = grid_t
@@ -350,10 +345,12 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     # Calculate latent heat and modify qv_current
     # HS_forcing_water_vapor!(grid_tracers_c,  grid_δtracers, grid_t, grid_δt, grid_p_full)
 
-    mean_ps_p, mean_energy_p, sum_tracers_p = Compute_Corrections_Init(vert_coord, mesh, atmo_data,
-    grid_u_p, grid_v_p, grid_ps_p, grid_t_p, 
-    grid_δu, grid_δv, grid_δt,  
-    Δt, grid_energy_full, grid_tracers_p, grid_tracers_c, grid_δtracers, grid_tracers_full)
+    mean_ps_p, mean_energy_p, sum_tracers_p = Compute_Corrections_Init(
+        vert_coord, mesh, atmo_data,
+        grid_u_p, grid_v_p, grid_ps_p, grid_t_p, 
+        grid_δu, grid_δv, grid_δt,  
+        Δt, grid_energy_full, grid_tracers_p, grid_tracers_c, grid_δtracers, grid_tracers_full
+    )
     
     # compute pressure based on grid_ps -> grid_p_half, grid_lnp_half, grid_p_full, grid_lnp_full 
     Pressure_Variables!(vert_coord, grid_ps, grid_p_half, grid_Δp, grid_lnp_half, grid_p_full, grid_lnp_full)
@@ -369,22 +366,25 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     
     # compute grid_M_half, grid_w_full, grid_δu, grid_δv, grid_δps, grid_δt, 
     # except the contributions from geopotential or vertical advection
-    Four_In_One!(vert_coord, atmo_data, grid_div, grid_u, grid_v, grid_ps, 
-    grid_Δp, grid_lnp_half, grid_lnp_full, grid_p_full,
-    grid_dλ_ps, grid_dθ_ps, 
-    grid_t, 
-    grid_M_half, grid_w_full, grid_δu, grid_δv, grid_δps, grid_δt, grid_δtracers)
+    Four_In_One!(
+        vert_coord, atmo_data, grid_div, grid_u, grid_v, grid_ps, 
+        grid_Δp, grid_lnp_half, grid_lnp_full, grid_p_full,
+        grid_dλ_ps, grid_dθ_ps, 
+        grid_t, 
+        grid_M_half, grid_w_full, grid_δu, grid_δv, grid_δps, grid_δt
+    )
 
-    Compute_Geopotential!(vert_coord, atmo_data, 
-    grid_lnp_half, grid_lnp_full,  
-    grid_t, 
-    grid_geopots, grid_geopot_full, grid_geopot_half)
+    Compute_Geopotential!(
+        vert_coord, atmo_data, 
+        grid_lnp_half, grid_lnp_full,  
+        grid_t, 
+        grid_geopots, grid_geopot_full, grid_geopot_half
+    )
     
 
     grid_δlnps .= grid_δps ./ grid_ps
     Trans_Grid_To_Spherical!(mesh, grid_δlnps, spe_δlnps)
     
-
     
     # compute vertical advection, todo  finite volume method 
     Vert_Advection!(vert_coord, grid_u, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme, grid_δQ)
@@ -393,16 +393,17 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     grid_δv  .+= grid_δQ
     Vert_Advection!(vert_coord, grid_t, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme, grid_δQ)
     grid_δt  .+= grid_δQ
-    ### By CJY2
-    Vert_Advection!(vert_coord, grid_tracers_c, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme,  grid_δQ)
-    grid_δtracers .+= grid_δQ
-    ###
+    # Tracer vertical advection
+    # Vert_Advection!(vert_coord, grid_tracers_c, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme,  grid_δQ)
+    # grid_δtracers .+= grid_δQ
+
+
     Add_Horizontal_Advection!(mesh, spe_t_c, grid_u, grid_v, grid_δt)
     Trans_Grid_To_Spherical!(mesh, grid_δt, spe_δt)
-    ### By CJY2
-    Add_Horizontal_Advection!(mesh, spe_tracers_c, grid_u, grid_v, grid_δtracers)
-    Trans_Grid_To_Spherical!(mesh, grid_δtracers, spe_δtracers)
-    ###
+    
+    #TODO: Tracer horizontal advection
+    Tracer_Horizontal_Advection!(mesh, grid_tracers_c, grid_δQ, grid_u, grid_v)
+    grid_δtracers .+= grid_δQ
 
     grid_absvor = dyn_data.grid_absvor
     Compute_Abs_Vor!(grid_vor, atmo_data.coriolis, grid_absvor)
@@ -428,14 +429,11 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     Compute_Spectral_Damping!(integrator, spe_vor_c, spe_vor_p, spe_δvor)
     Compute_Spectral_Damping!(integrator, spe_div_c, spe_div_p, spe_δdiv)
     Compute_Spectral_Damping!(integrator, spe_t_c, spe_t_p, spe_δt)
-    ### By CJY2
-    Compute_Spectral_Damping!(integrator, spe_tracers_c, spe_tracers_p, spe_δtracers)
-    ###
+
         
     Filtered_Leapfrog!(integrator, spe_δvor, spe_vor_p, spe_vor_c, spe_vor_n)
     Filtered_Leapfrog!(integrator, spe_δdiv, spe_div_p, spe_div_c, spe_div_n)
     Filtered_Leapfrog!(integrator, spe_δlnps, spe_lnps_p, spe_lnps_c, spe_lnps_n)
-    Filtered_Leapfrog!(integrator, spe_δtracers, spe_tracers_p, spe_tracers_c, spe_tracers_n)
     
     
     Trans_Spherical_To_Grid!(mesh, spe_vor_n, grid_vor)
@@ -444,48 +442,32 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     Trans_Spherical_To_Grid!(mesh, spe_lnps_n, grid_lnps)
     grid_ps_n .= exp.(grid_lnps)
 
-    Trans_Spherical_To_Grid!(mesh, spe_tracers_n, grid_tracers_n)
-
 
     ### By CJY 0517
     # HS_forcing_water_vapor!(grid_tracers_c,  grid_δtracers, grid_t, grid_δt, grid_p_full)
     ###
 
-    
 
-    # Correct the negative value results from advection
-    grid_tracers_c[grid_tracers_c .< 0] .= 0
-    grid_tracers_n[grid_tracers_n .< 0] .= 0
-
-    # Correct qv_next
-
-    # Filtered_Leapfrog!(integrator, spe_δtracers, spe_tracers_p, spe_tracers_c, spe_tracers_n)
-    # Trans_Spherical_To_Grid!(mesh, spe_tracers_n, grid_tracers_n)
-
-    # Trans_Spherical_To_Grid!(mesh, spe_δtracers, grid_δtracers)
-
-    # HS_forcing_water_vapor!(grid_tracers_c,  grid_δtracers, grid_t, grid_δt, grid_p_full)
-
-    # init_step = integrator.init_step
-    # robert_coef = integrator.robert_coef
-    # Δt = integrator.Δt
-    # if (init_step) 
-    #     grid_tracers_n .= grid_tracers_c + Δt*grid_δtracers
-    #     grid_tracers_c .+= robert_coef*(-1.0*grid_tracers_c + grid_tracers_n)
-    # else
-    #     grid_tracers_c .+= robert_coef*(grid_tracers_p - 2*grid_tracers_c)
-    #     grid_tracers_n .= grid_tracers_p + 2*Δt*grid_δtracers
-    #     grid_tracers_c .+= robert_coef*grid_tracers_n
-    # end
+    # Tracers leapfrog
+    init_step = integrator.init_step
+    robert_coef = integrator.robert_coef
+    Δt = integrator.Δt
+    if (init_step) 
+        grid_tracers_n .= grid_tracers_c + Δt*grid_δtracers
+        grid_tracers_c .+= robert_coef*(-1.0*grid_tracers_c + grid_tracers_n)
+    else
+        grid_tracers_c .+= robert_coef*(grid_tracers_p - 2*grid_tracers_c)
+        grid_tracers_n .= grid_tracers_p + 2*Δt*grid_δtracers
+        grid_tracers_c .+= robert_coef*grid_tracers_n
+    end
 
 
     Filtered_Leapfrog!(integrator, spe_δt, spe_t_p, spe_t_c, spe_t_n)
     Trans_Spherical_To_Grid!(mesh, spe_t_n, grid_t_n)
 
-    # @info "min grid_tracers_n" minimum(grid_tracers_n)
-    # @info "min dyn.grid_tracers_c" minimum(dyn_data.grid_tracers_n)
 
-    Compute_Corrections!(vert_coord, mesh, atmo_data, mean_ps_p, mean_energy_p, 
+    Compute_Corrections!(
+        vert_coord, mesh, atmo_data, mean_ps_p, mean_energy_p, 
         grid_u_n, grid_v_n,
         grid_energy_full,
         grid_ps_n, spe_lnps_n, 
@@ -499,21 +481,14 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
 
     day_to_sec = 86400
     if (integrator.time%day_to_sec == 0)
-        # dyn_data.grid_tracers_c[dyn_data.grid_tracers_c .< 0] .= 0
         @info "Day: ", div(integrator.time,day_to_sec), " Max |U|,|V|,|P|,|T|,|qv|: ", maximum(abs.(dyn_data.grid_u_c)), maximum(abs.(dyn_data.grid_v_c)), maximum(dyn_data.grid_p_full), maximum(dyn_data.grid_t_c), maximum(dyn_data.grid_tracers_c)
         @info "Day: ", div(integrator.time,day_to_sec), " Min |U|,|V|,|P|,|T|,|qv|: ", minimum(abs.(dyn_data.grid_u_c)), minimum(abs.(dyn_data.grid_v_c)), minimum(dyn_data.grid_p_full), minimum(dyn_data.grid_t_c), minimum(dyn_data.grid_tracers_c)
     end
+    # @info "Time: ", integrator.time, " Max |U|,|V|,|P|,|T|,|qv|: ", maximum(abs.(dyn_data.grid_u_c)), maximum(abs.(dyn_data.grid_v_c)), maximum(dyn_data.grid_p_full), maximum(dyn_data.grid_t_c), maximum(dyn_data.grid_tracers_c)
+    # @info "Time: ", integrator.time, " Min |U|,|V|,|P|,|T|,|qv|: ", minimum(abs.(dyn_data.grid_u_c)), minimum(abs.(dyn_data.grid_v_c)), minimum(dyn_data.grid_p_full), minimum(dyn_data.grid_t_c), minimum(dyn_data.grid_tracers_c)
+
 
     Time_Advance!(dyn_data)
-
-    # @info "min dyn.grid_tracers_c" minimum(dyn_data.grid_tracers_n)
-    
-    #@info "sec: ", integrator.time+1200, sum(abs.(grid_u_n)), sum(abs.(grid_v_n)), sum(abs.(grid_t_n)) , sum(abs.(grid_ps_n))
-    #@info "max: ", maximum(abs.(grid_u_n)), maximum(abs.(grid_v_n)), maximum(abs.(grid_t_n)) , maximum(abs.(grid_ps_n))
-    #@info "loc", grid_u_n[100,30,10],  grid_t_n[100,30,10], grid_u_n[1,32,1],  grid_t_n[1,32,1]
-    
-    #@assert(maximum(grid_u) <= 100.0 && maximum(grid_v) <= 100.0)
-
 
     Pressure_Variables!(vert_coord, grid_ps, grid_p_half, grid_Δp, grid_lnp_half, grid_p_full, grid_lnp_full)
     
@@ -526,6 +501,31 @@ function Get_Topography!(grid_geopots::Array{Float64, 3})
     grid_geopots .= read_file["grid_geopots_xyzt"][:,:,1,300]
     return
 end 
+
+
+function Tracer_Horizontal_Advection!(mesh::Spectral_Spherical_Mesh, grid_tracer, grid_δQ, grid_u, grid_v)
+    # WARNING d2x should multiply cos(θ)
+    d2x = (mesh.λc[3] - mesh.λc[1]) * mesh.radius 
+    d2y = (mesh.θc[3] - mesh.θc[1]) * mesh.radius 
+
+    pgrid_px = zeros(Float64, mesh.nλ, mesh.nθ, 20)
+    pgrid_py = zeros(Float64, mesh.nλ, mesh.nθ, 20)
+    for k in 1:20
+        for j in 1:mesh.nθ
+            pgrid_px[:, j, k] .= ((circshift(grid_tracer[:, j, k], -1).*circshift(grid_u[:, j, k], -1)) .- (circshift(grid_tracer[:, j, k], 1).*circshift(grid_u[:, j, k], 1))) ./ (d2x * cos(abs(mesh.θc[j])))
+        end
+    end
+    # @info "pgrid_px" maximum(pgrid_px) minimum(pgrid_px)
+
+
+    for k in 1:20
+        for i in 1:mesh.nλ
+            pgrid_py[i, :, k] .= (circshift(grid_tracer[i, :, k], -1) .* circshift(grid_v[i, :, k], -1) .- circshift(grid_tracer[i, :, k], 1) .* circshift(grid_v[i, :, k], 1)) ./ (d2y)
+        end
+    end
+
+    grid_δQ .= -(pgrid_px + pgrid_py)
+end
 
 function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::Atmo_Data, vert_coord::Vert_Coordinate, sea_level_ps_ref::Float64, init_t::Float64,
     grid_geopots::Array{Float64,3}, dyn_data::Dyn_Data)
@@ -541,9 +541,6 @@ function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::A
     nλ, nθ, nd = mesh.nλ, mesh.nθ, mesh.nd
     
     ### By CJY2
-    spe_tracers_n = dyn_data.spe_tracers_n
-    spe_tracers_c = dyn_data.spe_tracers_c
-    spe_tracers_p = dyn_data.spe_tracers_p 
         
     grid_tracers_n = dyn_data.grid_tracers_n
     grid_tracers_c = dyn_data.grid_tracers_c
@@ -637,11 +634,8 @@ function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::A
     Rv = 461.
     grid_tracers_c .= (0.622 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) ./ (grid_p_full .- 0.378 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) 
 
-    Trans_Grid_To_Spherical!(mesh, grid_tracers_c, spe_tracers_c)
-    Trans_Spherical_To_Grid!(mesh, spe_tracers_c, grid_tracers_c)
     
     # By CJY2
-    spe_tracers_p  .= spe_tracers_c
     grid_tracers_p .= grid_tracers_c
 
 end 
