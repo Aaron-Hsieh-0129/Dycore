@@ -288,7 +288,6 @@ We have
 δT = f^t - I^t + I^t
 
 """
-
 function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coordinate, 
     atmo_data::Atmo_Data, dyn_data::Dyn_Data, 
     semi_implicit::Semi_Implicit_Solver)
@@ -321,7 +320,6 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     grid_tracers_n = dyn_data.grid_tracers_n
     grid_tracers_c = dyn_data.grid_tracers_c
     grid_tracers_p = dyn_data.grid_tracers_p 
-    # grid_δtracers  = dyn_data.grid_δtracers
     grid_δtracers  = zeros(Float64, mesh.nλ, mesh.nθ, 20)
     grid_tracers_full = dyn_data.grid_tracers_full
 
@@ -344,7 +342,7 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
 
     # Calculate latent heat and modify qv_current
     # HS_forcing_water_vapor!(grid_tracers_c,  grid_δtracers, grid_t, grid_δt, grid_p_full)
-    """
+    
     mean_ps_p, mean_energy_p, sum_tracers_p = Compute_Corrections_Init(
         vert_coord, mesh, atmo_data,
         grid_u_p, grid_v_p, grid_ps_p, grid_t_p, 
@@ -393,36 +391,28 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     grid_δv  .+= grid_δQ
     Vert_Advection!(vert_coord, grid_t, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme, grid_δQ)
     grid_δt  .+= grid_δQ
-    # Tracer vertical advection
-    # Vert_Advection!(vert_coord, grid_tracers_c, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme,  grid_δQ)
-    # grid_δtracers .+= grid_δQ
-
 
     Add_Horizontal_Advection!(mesh, spe_t_c, grid_u, grid_v, grid_δt)
     Trans_Grid_To_Spherical!(mesh, grid_δt, spe_δt)
     
-   
-
     grid_absvor = dyn_data.grid_absvor
     Compute_Abs_Vor!(grid_vor, atmo_data.coriolis, grid_absvor)
-    
     
     grid_δu .+=  grid_absvor .* grid_v
     grid_δv .-=  grid_absvor .* grid_u
     
-    
     Vor_Div_From_Grid_UV!(mesh, grid_δu, grid_δv, spe_δvor, spe_δdiv)
     
-
     grid_energy_full .= grid_geopot_full .+ 0.5 * (grid_u.^2 + grid_v.^2)
     Trans_Grid_To_Spherical!(mesh, grid_energy_full, spe_energy)
     Apply_Laplacian!(mesh, spe_energy)
     spe_δdiv .-= spe_energy
     
-    
-    Implicit_Correction!(semi_implicit, vert_coord, atmo_data,
-    spe_div_c, spe_div_p, spe_lnps_c, spe_lnps_p, spe_t_c, spe_t_p, 
-    spe_δdiv, spe_δlnps, spe_δt)
+    Implicit_Correction!(
+        semi_implicit, vert_coord, atmo_data,
+        spe_div_c, spe_div_p, spe_lnps_c, spe_lnps_p, spe_t_c, spe_t_p, 
+        spe_δdiv, spe_δlnps, spe_δt
+    )
     
     Compute_Spectral_Damping!(integrator, spe_vor_c, spe_vor_p, spe_δvor)
     Compute_Spectral_Damping!(integrator, spe_div_c, spe_div_p, spe_δdiv)
@@ -440,12 +430,16 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     Trans_Spherical_To_Grid!(mesh, spe_lnps_n, grid_lnps)
     grid_ps_n .= exp.(grid_lnps)
 
-    """
+    
     ### By CJY 0517
     # HS_forcing_water_vapor!(grid_tracers_c,  grid_δtracers, grid_t, grid_δt, grid_p_full)
     ###
 
-     #TODO: Tracer horizontal advection
+    # Tracer vertical advection
+    # Vert_Advection!(vert_coord, grid_tracers_c, grid_Δp, grid_M_half, Δt, vert_coord.vert_advect_scheme,  grid_δQ)
+    # grid_δtracers .+= grid_δQ
+
+     # Tracer horizontal advection
      Tracer_Horizontal_Advection!(mesh, grid_tracers_c, grid_δQ, grid_u, grid_v)
      grid_δtracers .+= grid_δQ
 
@@ -463,41 +457,44 @@ function Spectral_Dynamics!(mesh::Spectral_Spherical_Mesh,  vert_coord::Vert_Coo
     end
 
     ##### Diffusion
-    # dx = (mesh.λc[3] - mesh.λc[1]) * mesh.radius / 2.
-    # dy = (mesh.θc[3] - mesh.θc[1]) * mesh.radius / 2.
-    # KX = 1000.
-    # KY = 1000.
+    do_diffusion = true
+    if do_diffusion
+        dx = (mesh.λc[3] - mesh.λc[1]) * mesh.radius / 2.
+        dy = (mesh.θc[3] - mesh.θc[1]) * mesh.radius / 2.
+        KX = 10000.
+        KY = 10000.
 
-    # grid_tracers_diffusion_x = zeros(Float64, mesh.nλ, mesh.nθ, mesh.nd)
-    # grid_tracers_diffusion_y = zeros(Float64, mesh.nλ, mesh.nθ, mesh.nd)
-    # for k in 1:20
-    #     for j in 1:64
-    #         grid_tracers_diffusion_x[:,j,k] = 2*Δt*KX * (circshift(grid_tracers_p[:, j, k], -1) .- 2. * grid_tracers_p[:, j, k] .+ circshift(grid_tracers_p[:, j, k], 1)) ./ (dx * cos(abs(mesh.θc[j])))^2
-    #     end
-    # end
+        grid_tracers_diffusion_x = zeros(Float64, mesh.nλ, mesh.nθ, mesh.nd)
+        grid_tracers_diffusion_y = zeros(Float64, mesh.nλ, mesh.nθ, mesh.nd)
+        for k in 1:20
+            for j in 1:64
+                grid_tracers_diffusion_x[:,j,k] = 2*Δt*KX * (circshift(grid_tracers_p[:, j, k], -1) .- 2. * grid_tracers_p[:, j, k] .+ circshift(grid_tracers_p[:, j, k], 1)) ./ (dx * cos(abs(mesh.θc[j])))^2
+            end
+        end
 
-    # for k in 1:20
-    #     for i in 1:128
-    #         grid_tracers_diffusion_y[i,:,k] = 2*Δt*KY * (circshift(grid_tracers_p[i, :, k], -1) .- 2. * grid_tracers_p[i, :, k] .+ circshift(grid_tracers_p[i, :, k], 1)) ./ dy^2
-    #     end
-    # end
-
-    # grid_tracers_n .+= grid_tracers_diffusion_x .+ grid_tracers_diffusion_y
-
-    # Filtered_Leapfrog!(integrator, spe_δt, spe_t_p, spe_t_c, spe_t_n)
-    # Trans_Spherical_To_Grid!(mesh, spe_t_n, grid_t_n)
+        for k in 1:20
+            for i in 1:128
+                grid_tracers_diffusion_y[i,:,k] = 2*Δt*KY * (circshift(grid_tracers_p[i, :, k], -1) .- 2. * grid_tracers_p[i, :, k] .+ circshift(grid_tracers_p[i, :, k], 1)) ./ dy^2
+            end
+        end
+        grid_tracers_n .+= grid_tracers_diffusion_x .+ grid_tracers_diffusion_y
+    end
 
 
-    # Compute_Corrections!(
-    #     vert_coord, mesh, atmo_data, mean_ps_p, mean_energy_p, 
-    #     grid_u_n, grid_v_n,
-    #     grid_energy_full,
-    #     grid_ps_n, spe_lnps_n, 
-    #     grid_t_n, spe_t_n, 
-    #     sum_tracers_p, grid_tracers_p, grid_tracers_c, grid_tracers_n,
-    #     grid_t,
-    #     grid_p_full
-    # )
+    Filtered_Leapfrog!(integrator, spe_δt, spe_t_p, spe_t_c, spe_t_n)
+    Trans_Spherical_To_Grid!(mesh, spe_t_n, grid_t_n)
+
+
+    Compute_Corrections!(
+        vert_coord, mesh, atmo_data, mean_ps_p, mean_energy_p, 
+        grid_u_n, grid_v_n,
+        grid_energy_full,
+        grid_ps_n, spe_lnps_n, 
+        grid_t_n, spe_t_n, 
+        sum_tracers_p, grid_tracers_p, grid_tracers_c, grid_tracers_n,
+        grid_t,
+        grid_p_full
+    )
 
     ###
 
@@ -541,63 +538,58 @@ function Tracer_Horizontal_Advection!(mesh::Spectral_Spherical_Mesh, grid_tracer
     # @info "pgrid_px" maximum(pgrid_px) minimum(pgrid_px)
 
     # Zonal advection
-    for k in 1:2
+    for k in 1:20
         for i in 1:mesh.nλ
             pgrid_py[i, 2:63, k] .= (circshift(grid_tracer[i, :, k], -1)[2:63] .* circshift(grid_v[i, :, k], -1)[2:63] .- circshift(grid_tracer[i, :, k], 1)[2:63] .* circshift(grid_v[i, :, k], 1)[2:63]) ./ (d2y)
         end
 
         # Option 1:
         # Zonal advection and solving boundary using average of \frac{\partial (vq)}{\partial y} and allocate it to every points.
+        pgrid_py[1:64, 64, k] .= ((grid_tracer[65:128, 64, k] .* -grid_v[65:128, 64, k]) .- (grid_tracer[1:64, 63, k] .* grid_v[1:64, 63, k])) ./ (dy_bd * 2.)
+        pgrid_py[65:128, 64, k] .= ((grid_tracer[1:64, 64, k] .* -grid_v[1:64, 64, k]) .- (grid_tracer[65:128, 63, k] .* grid_v[65:128, 63, k])) ./ (dy_bd * 2.)
+        pgrid_py[:,64,k] .= mean(pgrid_py[:,64,k] / (dy_bd * 2.))
+        pgrid_py[:,1,k] .= mean(pgrid_py[:,1,k] / (dy_bd * 2.))
 
-        # pgrid_py[1:64, 64, k] .= ((grid_tracer[65:128, 64, k] .* -grid_v[65:128, 64, k]) .- (grid_tracer[1:64, 63, k] .* grid_v[1:64, 63, k])) ./ (dy_bd * 2.)
-        # pgrid_py[65:128, 64, k] .= ((grid_tracer[1:64, 64, k] .* -grid_v[1:64, 64, k]) .- (grid_tracer[65:128, 63, k] .* grid_v[65:128, 63, k])) ./ (dy_bd * 2.)
-        # pgrid_py[:,64,k] .= mean(pgrid_py[:,64,k] / (dy_bd * 2.))
-        # pgrid_py[:,1,k] .= mean(pgrid_py[:,1,k] / (dy_bd * 2.))
-
-        
         # Option 2:
         # Zonal advection and Solving boundary using ∇^2 q_{inf} = f(x), f(x) = \frac{\partial (vq)}{\partial y}
-        pgrid_py[1:64, 64, k] .= ((grid_tracer[65:128, 64, k] .* -grid_v[65:128, 64, k]) .- (grid_tracer[1:64, 63, k] .* grid_v[1:64, 63, k])) 
-        pgrid_py[65:128, 64, k] .= ((grid_tracer[1:64, 64, k] .* -grid_v[1:64, 64, k]) .- (grid_tracer[65:128, 63, k] .* grid_v[65:128, 63, k])) 
+        # pgrid_py[1:64, 64, k] .= ((grid_tracer[65:128, 64, k] .* -grid_v[65:128, 64, k]) .- (grid_tracer[1:64, 63, k] .* grid_v[1:64, 63, k])) 
+        # pgrid_py[65:128, 64, k] .= ((grid_tracer[1:64, 64, k] .* -grid_v[1:64, 64, k]) .- (grid_tracer[65:128, 63, k] .* grid_v[65:128, 63, k])) 
 
-        A = zeros(Float64, 128+2, 128+2)
-        for i in 1:130
-            A[i, i] = 2.
-            if i != 1 && i != 130
-                A[i, i - 1] = -1.
-                A[i, i + 1] = -1.
-            elseif i == 1
-                A[i, i + 1] = -1.
-            else 
-                A[i, i - 1] = -1.
-            end
-        end
-        A = sparse(A)
+        # A = zeros(Float64, 128+2, 128+2)
+        # for i in 1:130
+        #     A[i, i] = 2.
+        #     if i != 1 && i != 130
+        #         A[i, i - 1] = -1.
+        #         A[i, i + 1] = -1.
+        #     elseif i == 1
+        #         A[i, i + 1] = -1.
+        #     else 
+        #         A[i, i - 1] = -1.
+        #     end
+        # end
+        # A = sparse(A)
 
-        b = zeros(Float64, 128+2)
-        b[1] = 0.
-        b[130] = 0.
-        b[2:129] .= grid_tracer[:,64,k]
-        b .= (d2x / 2. * cos(abs(mesh.θc[64]))) ./ 2. .* b
+        # b = zeros(Float64, 128+2)
+        # b[1] = 0.
+        # b[130] = 0.
+        # b[2:129] .= grid_tracer[:,64,k]
+        # b .= (d2x / 2. * cos(abs(mesh.θc[64]))) ./ 2. .* b
 
-        x1 = IterativeSolvers.bicgstabl(A, b, max_mv_products=5000)
-        pgrid_py[:,64,k] .= x1[2:129]
+        # x1 = IterativeSolvers.bicgstabl(A, b, max_mv_products=5000)
+        # pgrid_py[:,64,k] .= x1[2:129]
 
-        b2 = zeros(Float64, 128+2)
-        b2[1] = 0.
-        b2[130] = 0.
-        b2[2:129] .= grid_tracer[:,1,k]
-        b2 .= (d2x / 2. * cos(abs(mesh.θc[64]))) ./ 2. .* b2
+        # b2 = zeros(Float64, 128+2)
+        # b2[1] = 0.
+        # b2[130] = 0.
+        # b2[2:129] .= grid_tracer[:,1,k]
+        # b2 .= (d2x / 2. * cos(abs(mesh.θc[64]))) ./ 2. .* b2
 
-        x2 = IterativeSolvers.bicgstabl(A, b2, max_mv_products=5000)
-        pgrid_py[:,1,k] .= x2[2:129]
+        # x2 = IterativeSolvers.bicgstabl(A, b2, max_mv_products=5000)
+        # pgrid_py[:,1,k] .= x2[2:129]
     end
     # @info maximum(pgrid_py[:, 64, 1])
 
-
-
     grid_δQ .= -(pgrid_px + pgrid_py)
-    # grid_δQ .= -(pgrid_py)
 end
 
 function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::Atmo_Data, vert_coord::Vert_Coordinate, sea_level_ps_ref::Float64, init_t::Float64,
@@ -656,9 +648,8 @@ function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::A
     ###
     spe_vor_c[:,:,:] .= read_file["spe_vor_c_xyzt"][:,:,:,initial_day]
     spe_div_c[:,:,:] .= read_file["spe_div_c_xyzt"][:,:,:,initial_day]
-    # grid_u[:,:,:]    .= read_file["grid_u_c_xyzt"][:,:,:,initial_day]
-    # grid_v[:,:,:]    .= read_file["grid_v_c_xyzt"][:,:,:,initial_day]  
-    
+    grid_u[:,:,:]    .= read_file["grid_u_c_xyzt"][:,:,:,initial_day]
+    grid_v[:,:,:]    .= read_file["grid_v_c_xyzt"][:,:,:,initial_day]  
     
     UV_Grid_From_Vor_Div!(mesh, spe_vor_c, spe_div_c, grid_u, grid_v)
     
@@ -706,33 +697,37 @@ function Spectral_Initialize_Fields!(mesh::Spectral_Spherical_Mesh, atmo_data::A
     initial_RH = 0.5 
     Lv = 2.5*10^6.
     Rv = 461.
-    # grid_tracers_c .= (0.622 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) ./ (grid_p_full .- 0.378 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) 
+    grid_tracers_c .= (0.622 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) ./ (grid_p_full .- 0.378 .* (611.12 .* exp.(Lv ./ Rv .* (1. ./ 273.15 .- 1. ./ grid_t)) .* initial_RH)) 
 
-
-    # Advection test
-    # tracer
-    for k in 1:20
-        for j in 1:64
-            for i in 1:128
-                grid_tracers_c[i,j,k] = Advection_tracer(mesh, mesh.λc[i], mesh.θc[j])
-                grid_u[i,j,k] = AdvectionU(mesh, mesh.λc[i], mesh.θc[j])
-                grid_v[i,j,k] = AdvectionV(mesh, mesh.λc[i])
-                
+    
+    advection_test = false
+    if advection_test
+        # Advection test
+        # tracer
+        for k in 1:20
+            for j in 1:64
+                for i in 1:128
+                    grid_tracers_c[i,j,k] = Advection_tracer(mesh, mesh.λc[i], mesh.θc[j])
+                    grid_u[i,j,k] = AdvectionU(mesh, mesh.λc[i], mesh.θc[j])
+                    grid_v[i,j,k] = AdvectionV(mesh, mesh.λc[i])
+                    
+                end
             end
         end
+
+        grid_u_n, grid_v_n = dyn_data.grid_u_n, dyn_data.grid_v_n
+        grid_u_p    .= grid_u
+        grid_u_n    .= grid_u
+        grid_v_p    .= grid_v
+        grid_v_n    .= grid_v
     end
-
-    grid_u_n, grid_v_n = dyn_data.grid_u_n, dyn_data.grid_v_n
-    grid_u_p    .= grid_u
-    grid_u_n    .= grid_u
-    grid_v_p    .= grid_v
-    grid_v_n    .= grid_v
-
+    
     # By CJY2
     grid_tracers_p .= grid_tracers_c
 
 end 
 
+"""
 # Advection test
 function Advection_tracer(mesh, lon, lat)
     h0 = 1000.
@@ -760,7 +755,7 @@ function AdvectionV(mesh, lon)
     v = - u0 * sin(ALPHA0) * sin(lon)
     return v
 end
-
+"""
 
 function Spectral_Dynamics_Physics!(atmo_data::Atmo_Data, mesh::Spectral_Spherical_Mesh, dyn_data::Dyn_Data, Δt::Int64, physics_params::Dict{String, Float64})
     grid_δu, grid_δv, grid_δps, grid_δt = dyn_data.grid_δu, dyn_data.grid_δv, dyn_data.grid_δps, dyn_data.grid_δt
@@ -779,18 +774,18 @@ end
 function Atmosphere_Update!(mesh::Spectral_Spherical_Mesh, atmo_data::Atmo_Data, vert_coord::Vert_Coordinate, semi_implicit::Semi_Implicit_Solver, 
                             dyn_data::Dyn_Data, physcis_params::Dict{String, Float64})
 
-    # Δt = Get_Δt(semi_implicit.integrator)
-    # Spectral_Dynamics_Physics!(atmo_data, mesh,  dyn_data, Δt, physcis_params)
+    Δt = Get_Δt(semi_implicit.integrator)
+    Spectral_Dynamics_Physics!(atmo_data, mesh,  dyn_data, Δt, physcis_params)
     Spectral_Dynamics!(mesh,  vert_coord , atmo_data, dyn_data, semi_implicit)
 
-    # grid_ps , grid_Δp, grid_p_half, grid_lnp_half, grid_p_full, grid_lnp_full = dyn_data.grid_ps_c,  dyn_data.grid_Δp, dyn_data.grid_p_half, 
-    #                                                                             dyn_data.grid_lnp_half, dyn_data.grid_p_full, dyn_data.grid_lnp_full 
-    # grid_t = dyn_data.grid_t_c
-    # grid_geopots, grid_z_full, grid_z_half = dyn_data.grid_geopots, dyn_data.grid_z_full, dyn_data.grid_z_half
+    grid_ps , grid_Δp, grid_p_half, grid_lnp_half, grid_p_full, grid_lnp_full = dyn_data.grid_ps_c,  dyn_data.grid_Δp, dyn_data.grid_p_half, 
+                                                                                dyn_data.grid_lnp_half, dyn_data.grid_p_full, dyn_data.grid_lnp_full 
+    grid_t = dyn_data.grid_t_c
+    grid_geopots, grid_z_full, grid_z_half = dyn_data.grid_geopots, dyn_data.grid_z_full, dyn_data.grid_z_half
         
-    # Compute_Pressures_And_Heights!(atmo_data, vert_coord,     
-    # grid_ps, grid_geopots, grid_t, 
-    # grid_p_half, grid_Δp, grid_lnp_half, grid_p_full, grid_lnp_full, grid_z_full, grid_z_half)
+    Compute_Pressures_And_Heights!(atmo_data, vert_coord,     
+    grid_ps, grid_geopots, grid_t, 
+    grid_p_half, grid_Δp, grid_lnp_half, grid_p_full, grid_lnp_full, grid_z_full, grid_z_half)
 
     return
 end 
