@@ -8,6 +8,8 @@ using Statistics
 using JLD2
 using MAT
 using PyPlot
+using IterativeSolvers
+using SparseArrays
 
 include("Atmos_Spectral/Gauss_And_Legendre.jl")
 include("Atmos_Spectral/Spectral_Spherical_Mesh.jl")

@@ -40,7 +40,7 @@ function Atmos_Spectral_Dynamics_Main(physcis_params::Dict{String, Float64}, end
     day_to_sec = 86400
     start_time = 0
     end_time = end_day*day_to_sec  #
-    Δt = 600
+    Δt = 100
     init_step = true
     
     integrator = Filtered_Leapfrog(robert_coef, 
